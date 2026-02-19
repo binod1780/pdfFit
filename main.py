@@ -85,14 +85,163 @@ class PDFFitApp(ctk.CTk):
         except:
             pass
 
-    # --- COMPRESS TAB (RESTORED) ---
+    # --- IMG TO PDF TAB (WITH NEW PREVIEW LOGIC) ---
+    def setup_convert_tab(self):
+        ctk.CTkLabel(self.tab_convert, text="Images to PDF", font=("Arial", 20, "bold")).pack(pady=15)
+        ctk.CTkButton(self.tab_convert, text="Select Images", command=self.select_images_action).pack(pady=10)
+
+        self.layout_var = ctk.StringVar(value="Original")
+        lay_frame = ctk.CTkFrame(self.tab_convert, fg_color="transparent");
+        lay_frame.pack(pady=10)
+        ctk.CTkRadioButton(lay_frame, text="Original Size", variable=self.layout_var, value="Original").grid(row=0,
+                                                                                                             column=0,
+                                                                                                             padx=15)
+        ctk.CTkRadioButton(lay_frame, text="A4 Paper Size", variable=self.layout_var, value="A4").grid(row=0, column=1,
+                                                                                                       padx=15)
+
+        self.save_img_btn = ctk.CTkButton(self.tab_convert, text="Save PDF", command=self.convert_logic,
+                                          state="disabled", height=40);
+        self.save_img_btn.pack(pady=10)
+
+    def select_images_action(self):
+        paths = filedialog.askopenfilenames(filetypes=[("Images", "*.jpg *.jpeg *.png")])
+        if paths:
+            self.selected_images = list(paths)
+            self.save_img_btn.configure(state="normal")
+            self.clear_preview()
+            self.stat_label.configure(text="Images Selected")
+            self.size_label.configure(text=f"Count: {len(self.selected_images)}")
+
+            for i, p in enumerate(self.selected_images):
+                img = Image.open(p)
+                w, h = img.size
+                # Scale for sidebar (width 320) while maintaining ratio
+                display_h = int(320 * (h / w))
+                ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(320, display_h))
+
+                ctk.CTkLabel(self.scroll_preview, text=f"Image {i + 1}: {os.path.basename(p)[:20]}...",
+                             font=("Arial", 10, "italic")).pack(pady=(10, 0))
+                ctk.CTkLabel(self.scroll_preview, image=ctk_img, text="").pack(pady=(0, 10))
+                self.update_idletasks()
+
+    def convert_logic(self):
+        out = filedialog.asksaveasfilename(defaultextension=".pdf")
+        if not out: return
+        try:
+            if self.layout_var.get() == "A4":
+                a4_size = (img2pdf.mm_to_pt(210), img2pdf.mm_to_pt(297))
+                layout = img2pdf.get_layout_fun(a4_size)
+                with open(out, "wb") as f:
+                    f.write(img2pdf.convert(self.selected_images, layout_fun=layout))
+            else:
+                with open(out, "wb") as f:
+                    f.write(img2pdf.convert(self.selected_images))
+            messagebox.showinfo("Success", "Images Converted to PDF!")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    # --- WATERMARK TAB (PRESERVED) ---
+    def setup_watermark_tab(self):
+        ctk.CTkLabel(self.tab_watermark, text="Add Watermark", font=("Arial", 20, "bold")).pack(pady=10)
+        ctk.CTkButton(self.tab_watermark, text="1. Select PDF", command=self.select_pdf_for_wm).pack(pady=5)
+        opt = ctk.CTkFrame(self.tab_watermark);
+        opt.pack(fill="both", expand=True, padx=20, pady=10)
+        self.wm_type = ctk.StringVar(value="text")
+        ctk.CTkSegmentedButton(opt, values=["text", "image"], variable=self.wm_type,
+                               command=self.toggle_wm_fields).pack(pady=10)
+        self.wm_text_entry = ctk.CTkEntry(opt, placeholder_text="Enter Watermark Text", width=300);
+        self.wm_text_entry.pack(pady=5)
+        self.wm_image_btn = ctk.CTkButton(opt, text="2. Select Watermark Image", command=self.select_wm_image,
+                                          fg_color="#2c3e50")
+        self.wm_image_btn.pack(pady=5)
+        self.toggle_wm_fields("text")
+        set_f = ctk.CTkFrame(opt, fg_color="transparent");
+        set_f.pack(pady=10)
+        pos_outer = ctk.CTkFrame(set_f, fg_color="transparent");
+        pos_outer.grid(row=0, column=0, padx=20)
+        ctk.CTkLabel(pos_outer, text="Position", font=("Arial", 13, "bold")).pack(pady=(0, 5))
+        pos_frame = ctk.CTkFrame(pos_outer, fg_color="transparent");
+        pos_frame.pack()
+        self.pos_var = ctk.StringVar(value="Center")
+        positions = [("Top-Left", 0, 0), ("Top-Center", 0, 1), ("Top-Right", 0, 2),
+                     ("Mid-Left", 1, 0), ("Center", 1, 1), ("Mid-Right", 1, 2),
+                     ("Bot-Left", 2, 0), ("Bot-Center", 2, 1), ("Bot-Right", 2, 2)]
+        for text, r, c in positions:
+            ctk.CTkRadioButton(pos_frame, text="", variable=self.pos_var, value=text, width=20).grid(row=r, column=c,
+                                                                                                     padx=5, pady=2)
+        sl_frame = ctk.CTkFrame(set_f, fg_color="transparent");
+        sl_frame.grid(row=0, column=1, padx=20)
+        ctk.CTkLabel(sl_frame, text="Opacity").pack()
+        self.wm_opacity = ctk.CTkSlider(sl_frame, from_=0.1, to=1.0);
+        self.wm_opacity.set(0.4);
+        self.wm_opacity.pack()
+        ctk.CTkLabel(sl_frame, text="Rotation (Degrees)").pack(pady=(10, 0))
+        self.wm_rotate_box = ctk.CTkComboBox(sl_frame, values=["0", "45", "90", "135", "180", "225", "270", "315"])
+        self.wm_rotate_box.set("0");
+        self.wm_rotate_box.pack()
+        self.wm_apply_btn = ctk.CTkButton(self.tab_watermark, text="Apply Watermark", command=self.apply_watermark,
+                                          fg_color="#e74c3c", height=45)
+        self.wm_apply_btn.pack(pady=20)
+
+    def toggle_wm_fields(self, val):
+        if val == "text":
+            self.wm_text_entry.configure(state="normal");
+            self.wm_image_btn.configure(state="disabled")
+        else:
+            self.wm_text_entry.configure(state="disabled");
+            self.wm_image_btn.configure(state="normal")
+
+    def select_pdf_for_wm(self):
+        path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf")])
+        if path: self.selected_pdf_path = path; self.update_pdf_preview(path)
+
+    def select_wm_image(self):
+        path = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
+        if path: self.watermark_image_path = path
+
+    def apply_watermark(self):
+        if not self.selected_pdf_path: return
+        out = filedialog.asksaveasfilename(defaultextension=".pdf")
+        if not out: return
+        doc = fitz.open(self.selected_pdf_path)
+        op, rot = self.wm_opacity.get(), int(self.wm_rotate_box.get())
+        img_bytes = None
+        if self.wm_type.get() == "image" and self.watermark_image_path:
+            img = Image.open(self.watermark_image_path).convert("RGBA")
+            if rot != 0: img = img.rotate(rot, expand=True, resample=Image.BICUBIC)
+            alpha = img.getchannel('A').point(lambda i: i * op);
+            img.putalpha(alpha)
+            buf = io.BytesIO();
+            img.save(buf, format="PNG");
+            img_bytes = buf.getvalue()
+        for page in doc:
+            wm_w, wm_h = (200, 200) if self.wm_type.get() == "image" else (350, 100)
+            pw, ph, m = page.rect.width, page.rect.height, 50
+            coords = {"Top-Left": (m, m), "Top-Center": ((pw - wm_w) / 2, m), "Top-Right": (pw - wm_w - m, m),
+                      "Mid-Left": (m, (ph - wm_h) / 2), "Center": ((pw - wm_w) / 2, (ph - wm_h) / 2),
+                      "Mid-Right": (pw - wm_w - m, (ph - wm_h) / 2),
+                      "Bot-Left": (m, ph - wm_h - m), "Bot-Center": ((pw - wm_w) / 2, ph - wm_h - m),
+                      "Bot-Right": (pw - wm_w - m, ph - wm_h - m)}
+            x, y = coords.get(self.pos_var.get(), (m, m));
+            rect = fitz.Rect(x, y, x + wm_w, y + wm_h)
+            if self.wm_type.get() == "text":
+                txt = self.wm_text_entry.get() or "WATERMARK";
+                pivot = rect.tl + (rect.br - rect.tl) * 0.5
+                page.insert_textbox(rect, txt, fontsize=40, color=(0.7, 0.7, 0.7), align=fitz.TEXT_ALIGN_CENTER,
+                                    fill_opacity=op, morph=(pivot, fitz.Matrix(rot)))
+            elif img_bytes:
+                page.insert_image(rect, stream=img_bytes, rotate=0)
+        doc.save(out);
+        doc.close();
+        messagebox.showinfo("Success", "Watermark applied!")
+
+    # --- COMPRESS TAB (PRESERVED) ---
     def setup_compress_tab(self):
         ctk.CTkLabel(self.tab_compress, text="Compress PDF", font=("Arial", 20, "bold")).pack(pady=15)
         ctk.CTkButton(self.tab_compress, text="Select PDF", command=self.select_pdf_for_compress).pack(pady=5)
         self.file_info_label = ctk.CTkLabel(self.tab_compress, text="No file selected", font=("Arial", 11, "italic"),
                                             text_color="gray");
         self.file_info_label.pack(pady=5)
-
         sf = ctk.CTkFrame(self.tab_compress, fg_color="transparent");
         sf.pack(pady=20, fill="x", padx=40)
         ctk.CTkLabel(sf, text="Low Compress\n(High Quality)", font=("Arial", 11)).grid(row=0, column=0, padx=10)
@@ -102,7 +251,6 @@ class PDFFitApp(ctk.CTk):
         self.comp_slider.grid(row=0, column=1, sticky="ew")
         ctk.CTkLabel(sf, text="High Compress\n(Low Quality)", font=("Arial", 11)).grid(row=0, column=2, padx=10)
         sf.grid_columnconfigure(1, weight=1)
-
         self.int_lbl = ctk.CTkLabel(self.tab_compress, text="Compression Intensity: 30%", font=("Arial", 12));
         self.int_lbl.pack(pady=5)
         self.prog = ctk.CTkProgressBar(self.tab_compress, width=400);
@@ -114,9 +262,7 @@ class PDFFitApp(ctk.CTk):
 
     def select_pdf_for_compress(self):
         path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf")])
-        if path: self.selected_pdf_path = path; self.file_info_label.configure(
-            text=f"Selected: {os.path.basename(path)}", text_color="#3498db"); self.update_pdf_preview(
-            path); self.comp_btn.configure(state="normal")
+        if path: self.selected_pdf_path = path; self.update_pdf_preview(path); self.comp_btn.configure(state="normal")
 
     def compress_logic(self):
         out = filedialog.asksaveasfilename(defaultextension=".pdf")
@@ -137,57 +283,7 @@ class PDFFitApp(ctk.CTk):
         self.prog.set(0);
         messagebox.showinfo("Done", "PDF Compressed!")
 
-    # --- IMG TO PDF TAB (WITH SIZE OPTIONS) ---
-    def setup_convert_tab(self):
-        ctk.CTkLabel(self.tab_convert, text="Images to PDF", font=("Arial", 20, "bold")).pack(pady=15)
-        ctk.CTkButton(self.tab_convert, text="Select Images", command=self.select_images_action).pack(pady=10)
-
-        # New Layout Option Frame
-        self.layout_var = ctk.StringVar(value="Original")
-        lay_frame = ctk.CTkFrame(self.tab_convert, fg_color="transparent");
-        lay_frame.pack(pady=10)
-        ctk.CTkRadioButton(lay_frame, text="Original Size", variable=self.layout_var, value="Original").grid(row=0,
-                                                                                                             column=0,
-                                                                                                             padx=15)
-        ctk.CTkRadioButton(lay_frame, text="A4 Paper Size", variable=self.layout_var, value="A4").grid(row=0, column=1,
-                                                                                                       padx=15)
-
-        self.save_img_btn = ctk.CTkButton(self.tab_convert, text="Save PDF", command=self.convert_logic,
-                                          state="disabled", height=40);
-        self.save_img_btn.pack(pady=10)
-
-    def select_images_action(self):
-        paths = filedialog.askopenfilenames(filetypes=[("Images", "*.jpg *.jpeg *.png")])
-        if paths:
-            self.selected_images = list(paths)
-            self.save_img_btn.configure(state="normal")
-            self.clear_preview()
-            for i, p in enumerate(self.selected_images):
-                img = Image.open(p);
-                w, h = img.size
-                ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(320, int(320 * (h / w))))
-                ctk.CTkLabel(self.scroll_preview, text=f"Img {i + 1}").pack();
-                ctk.CTkLabel(self.scroll_preview, image=ctk_img, text="").pack(pady=10)
-                self.update_idletasks()
-
-    def convert_logic(self):
-        out = filedialog.asksaveasfilename(defaultextension=".pdf")
-        if not out: return
-        try:
-            if self.layout_var.get() == "A4":
-                # A4 size in points
-                a4_size = (img2pdf.mm_to_pt(210), img2pdf.mm_to_pt(297))
-                layout = img2pdf.get_layout_fun(a4_size)
-                with open(out, "wb") as f:
-                    f.write(img2pdf.convert(self.selected_images, layout_fun=layout))
-            else:
-                with open(out, "wb") as f:
-                    f.write(img2pdf.convert(self.selected_images))
-            messagebox.showinfo("Success", "Images Converted to PDF!")
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
-
-    # --- MERGE TAB (RESTORED) ---
+    # --- MERGE & SPLIT (PRESERVED) ---
     def setup_merge_tab(self):
         ctk.CTkLabel(self.tab_merge, text="Merge PDFs", font=("Arial", 20, "bold")).pack(pady=10)
         b_frame = ctk.CTkFrame(self.tab_merge, fg_color="transparent");
@@ -240,7 +336,6 @@ class PDFFitApp(ctk.CTk):
             res.close();
             messagebox.showinfo("Success", "Merged!")
 
-    # --- SPLIT TAB (RESTORED) ---
     def setup_split_tab(self):
         ctk.CTkLabel(self.tab_split, text="Split PDF", font=("Arial", 20, "bold")).pack(pady=15)
         ctk.CTkButton(self.tab_split, text="Select PDF to Split", command=self.select_pdf_for_split).pack(pady=10)
@@ -286,95 +381,6 @@ class PDFFitApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", str(e))
         doc.close()
-
-    # --- WATERMARK TAB (RESTORED DROPDOWN ROTATION) ---
-    def setup_watermark_tab(self):
-        ctk.CTkLabel(self.tab_watermark, text="Add Watermark", font=("Arial", 20, "bold")).pack(pady=10)
-        ctk.CTkButton(self.tab_watermark, text="1. Select PDF", command=self.select_pdf_for_wm).pack(pady=5)
-
-        opt = ctk.CTkFrame(self.tab_watermark);
-        opt.pack(fill="both", expand=True, padx=20, pady=10)
-        self.wm_type = ctk.StringVar(value="text")
-        ctk.CTkSegmentedButton(opt, values=["text", "image"], variable=self.wm_type).pack(pady=10)
-
-        self.wm_text_entry = ctk.CTkEntry(opt, placeholder_text="Enter Watermark Text", width=300);
-        self.wm_text_entry.pack(pady=5)
-        ctk.CTkButton(opt, text="2. Select Watermark Image", command=self.select_wm_image, fg_color="#2c3e50").pack(
-            pady=5)
-
-        set_f = ctk.CTkFrame(opt, fg_color="transparent");
-        set_f.pack(pady=10)
-        pos_frame = ctk.CTkFrame(set_f, fg_color="transparent");
-        pos_frame.grid(row=0, column=0, padx=20)
-        self.pos_var = ctk.StringVar(value="Center")
-        positions = [("Top-Left", 0, 0), ("Top-Center", 0, 1), ("Top-Right", 0, 2),
-                     ("Mid-Left", 1, 0), ("Center", 1, 1), ("Mid-Right", 1, 2),
-                     ("Bot-Left", 2, 0), ("Bot-Center", 2, 1), ("Bot-Right", 2, 2)]
-        for text, r, c in positions:
-            ctk.CTkRadioButton(pos_frame, text="", variable=self.pos_var, value=text, width=20).grid(row=r, column=c,
-                                                                                                     padx=5, pady=2)
-
-        sl_frame = ctk.CTkFrame(set_f, fg_color="transparent");
-        sl_frame.grid(row=0, column=1, padx=20)
-        ctk.CTkLabel(sl_frame, text="Opacity").pack()
-        self.wm_opacity = ctk.CTkSlider(sl_frame, from_=0.1, to=1.0);
-        self.wm_opacity.set(0.4);
-        self.wm_opacity.pack()
-
-        ctk.CTkLabel(sl_frame, text="Rotation (Degrees)").pack(pady=(10, 0))
-        self.wm_rotate_box = ctk.CTkComboBox(sl_frame, values=["0", "45", "90", "135", "180", "225", "270", "315"])
-        self.wm_rotate_box.set("0");
-        self.wm_rotate_box.pack()
-
-        self.wm_apply_btn = ctk.CTkButton(self.tab_watermark, text="Apply Watermark", command=self.apply_watermark,
-                                          fg_color="#e74c3c", height=45)
-        self.wm_apply_btn.pack(pady=20)
-
-    def select_pdf_for_wm(self):
-        path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf")])
-        if path: self.selected_pdf_path = path; self.update_pdf_preview(path)
-
-    def select_wm_image(self):
-        path = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
-        if path: self.watermark_image_path = path
-
-    def apply_watermark(self):
-        if not self.selected_pdf_path: return
-        out = filedialog.asksaveasfilename(defaultextension=".pdf")
-        if not out: return
-        doc = fitz.open(self.selected_pdf_path)
-        op, rot = self.wm_opacity.get(), int(self.wm_rotate_box.get())
-
-        img_bytes = None
-        if self.wm_type.get() == "image" and self.watermark_image_path:
-            img = Image.open(self.watermark_image_path).convert("RGBA")
-            alpha = img.getchannel('A').point(lambda i: i * op);
-            img.putalpha(alpha)
-            buf = io.BytesIO();
-            img.save(buf, format="PNG");
-            img_bytes = buf.getvalue()
-
-        for page in doc:
-            wm_w, wm_h = (200, 200) if self.wm_type.get() == "image" else (350, 100)
-            pw, ph, m = page.rect.width, page.rect.height, 50
-            coords = {"Top-Left": (m, m), "Top-Center": ((pw - wm_w) / 2, m), "Top-Right": (pw - wm_w - m, m),
-                      "Mid-Left": (m, (ph - wm_h) / 2), "Center": ((pw - wm_w) / 2, (ph - wm_h) / 2),
-                      "Mid-Right": (pw - wm_w - m, (ph - wm_h) / 2),
-                      "Bot-Left": (m, ph - wm_h - m), "Bot-Center": ((pw - wm_w) / 2, ph - wm_h - m),
-                      "Bot-Right": (pw - wm_w - m, ph - wm_h - m)}
-            x, y = coords.get(self.pos_var.get(), (m, m));
-            rect = fitz.Rect(x, y, x + wm_w, y + wm_h)
-
-            if self.wm_type.get() == "text":
-                txt = self.wm_text_entry.get() or "WATERMARK";
-                pivot = rect.tl + (rect.br - rect.tl) * 0.5
-                page.insert_textbox(rect, txt, fontsize=40, color=(0.7, 0.7, 0.7), align=fitz.TEXT_ALIGN_CENTER,
-                                    fill_opacity=op, morph=(pivot, fitz.Matrix(rot)))
-            elif img_bytes:
-                page.insert_image(rect, stream=img_bytes, rotate=rot)
-        doc.save(out);
-        doc.close();
-        messagebox.showinfo("Success", "Watermark applied!")
 
 
 if __name__ == "__main__":
