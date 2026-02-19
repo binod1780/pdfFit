@@ -1,3 +1,7 @@
 innoScript.iss
+main.spec
+
+.idea
 
 dist/
+build/
